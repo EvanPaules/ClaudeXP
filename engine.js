@@ -8,6 +8,7 @@ const KEYWORDS = {
 };
 
 const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+const TEST_FILE_RE = /(\.test\.|\.spec\.|_test\.|[\\/]tests?[\\/])/i;
 
 export function parseTranscript(transcriptPath) {
   const empty = {
@@ -18,6 +19,10 @@ export function parseTranscript(transcriptPath) {
     isFeature: false,
     isRefactor: false,
     hasTests: false,
+    uniqueToolTypes: 0,
+    usedBash: false,
+    editedTestFile: false,
+    crossedLocalMidnight: false,
   };
 
   if (!transcriptPath || !fs.existsSync(transcriptPath)) return empty;
@@ -27,7 +32,10 @@ export function parseTranscript(transcriptPath) {
   catch { return empty; }
 
   const files = new Set();
+  const toolNames = new Set();
   let toolUses = 0;
+  let usedBash = false;
+  let editedTestFile = false;
   let firstTs = null, lastTs = null;
   const found = { fix: false, feature: false, refactor: false, test: false };
 
@@ -59,10 +67,17 @@ export function parseTranscript(transcriptPath) {
 
       if (block.type === 'tool_use' && role === 'assistant') {
         toolUses++;
+        if (block.name) toolNames.add(block.name);
+        if (block.name === 'Bash') usedBash = true;
         const input = block.input || {};
         if (FILE_TOOLS.has(block.name)) {
-          if (input.file_path) files.add(String(input.file_path));
-          if (input.notebook_path) files.add(String(input.notebook_path));
+          const paths = [];
+          if (input.file_path) paths.push(String(input.file_path));
+          if (input.notebook_path) paths.push(String(input.notebook_path));
+          for (const p of paths) {
+            files.add(p);
+            if (!editedTestFile && TEST_FILE_RE.test(p)) editedTestFile = true;
+          }
         }
       }
 
@@ -72,6 +87,10 @@ export function parseTranscript(transcriptPath) {
     }
   }
 
+  const crossedLocalMidnight =
+    firstTs != null && lastTs != null &&
+    new Date(firstTs).toDateString() !== new Date(lastTs).toDateString();
+
   return {
     toolUses,
     uniqueFiles: files.size,
@@ -80,6 +99,10 @@ export function parseTranscript(transcriptPath) {
     isFeature: found.feature,
     isRefactor: found.refactor,
     hasTests: found.test,
+    uniqueToolTypes: toolNames.size,
+    usedBash,
+    editedTestFile,
+    crossedLocalMidnight,
   };
 }
 

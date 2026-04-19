@@ -19,7 +19,8 @@
   "scripts": {
     "hook": "node hook.js",
     "start": "node cli.js",
-    "stats": "node cli.js stats"
+    "stats": "node cli.js stats",
+    "test": "node --test \"test/**/*.test.js\""
   },
   "keywords": [
     "claude",
