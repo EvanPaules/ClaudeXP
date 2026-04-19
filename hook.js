@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { checkQuest } from './quests.js';
 import { parseTranscript, scoreSession, descriptorFor } from './engine.js';
 import {
   getDB, getDefaultUser, getOrCreateUser, saveSession, getTotalXP, hasSessionOnDate, countSessions,
@@ -34,8 +35,10 @@ async function main() {
   const yDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const streakActive = hasSessionOnDate(db, user.id, yDate);
 
-  const { xp: xpGained, breakdown } = scoreSession(signals, streakActive);
-
+  const { xp: xpGainedRaw, breakdown } = scoreSession(signals, streakActive);
+  const { quest, completed, bonus } = checkQuest(signals);
+  if (completed) breakdown.push({ xp: bonus, reason: `Daily quest: "${quest.label}" ✓` });
+  const xpGained = xpGainedRaw + (completed ? bonus : 0);
   const prevXP = getTotalXP(db, user.id);
   const newXP = prevXP + xpGained;
   const prevLevel = levelFor(prevXP);
