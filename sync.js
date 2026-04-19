@@ -79,7 +79,10 @@ export async function claimUsername({ username, ownerToken, totalXP = 0, level =
   }
 }
 
-export async function updateProfile({ username, ownerToken, totalXP, level, sessionCount }, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export async function updateProfile(
+  { username, ownerToken, totalXP, level, sessionCount, activeTitle = null, titleExpiresAt = null },
+  { timeoutMs = DEFAULT_TIMEOUT_MS } = {}
+) {
   const cfg = resolveCloudConfig();
   if (!cfg.url || !cfg.key) return disabled();
   if (!ownerToken) return { ok: false, reason: 'no owner token — run: claudexp cloud claim' };
@@ -89,6 +92,8 @@ export async function updateProfile({ username, ownerToken, totalXP, level, sess
     total_xp: totalXP,
     level,
     session_count: sessionCount,
+    active_title: activeTitle,
+    title_expires_at: titleExpiresAt,
     updated_at: new Date().toISOString(),
   });
 
@@ -138,7 +143,7 @@ export async function fetchLeaderboard(limit = 50, { timeoutMs = 5000 } = {}) {
   const cfg = resolveCloudConfig();
   if (!cfg.url || !cfg.key) return { ok: false, reason: 'cloud not configured', rows: [] };
 
-  const url = `${cfg.url}/rest/v1/profiles?select=username,total_xp,level,session_count,updated_at&order=total_xp.desc&limit=${limit}`;
+  const url = `${cfg.url}/rest/v1/profiles?select=username,total_xp,level,session_count,updated_at,active_title,title_expires_at&order=total_xp.desc&limit=${limit}`;
   try {
     const res = await withTimeout((signal) => fetch(url, { headers: authHeaders(cfg), signal }), timeoutMs);
     if (!res.ok) return { ok: false, reason: await errFromRes(res), rows: [] };

@@ -17,20 +17,24 @@ drop table   if exists profiles           cascade;
 drop table   if exists insert_rate_limit  cascade;
 
 create table profiles (
-  username       text primary key,
-  owner_token    text        not null,
-  total_xp       integer     not null default 0,
-  level          integer     not null default 1,
-  session_count  integer     not null default 0,
-  created_at     timestamptz not null default now(),
-  updated_at     timestamptz not null default now(),
+  username         text primary key,
+  owner_token      text        not null,
+  total_xp         integer     not null default 0,
+  level            integer     not null default 1,
+  session_count    integer     not null default 0,
+  active_title     text,
+  title_expires_at timestamptz,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
 
   constraint profiles_username_format
     check (username ~ '^[a-zA-Z0-9][a-zA-Z0-9_-]{1,23}$'),
   constraint profiles_owner_token_length
     check (length(owner_token) between 16 and 128),
   constraint profiles_total_xp_ceiling
-    check (total_xp between 0 and 10000000)
+    check (total_xp between 0 and 10000000),
+  constraint profiles_active_title_length
+    check (active_title is null or length(active_title) between 1 and 64)
 );
 
 create index profiles_total_xp_idx on profiles (total_xp desc);
@@ -40,20 +44,20 @@ alter table profiles enable row level security;
 -- Column-level grants: anon CANNOT read owner_token, CANNOT change username
 -- or owner_token after insert.
 revoke all on profiles from anon;
-grant select (username, total_xp, level, session_count, created_at, updated_at)
+grant select (username, total_xp, level, session_count, created_at, updated_at, active_title, title_expires_at)
   on profiles to anon;
 grant insert (username, owner_token, total_xp, level, session_count)
   on profiles to anon;
-grant update (total_xp, level, session_count, updated_at)
+grant update (total_xp, level, session_count, updated_at, active_title, title_expires_at)
   on profiles to anon;
 grant delete on profiles to anon;
 
 -- Same for authenticated (in case Supabase adds auth later).
-grant select (username, total_xp, level, session_count, created_at, updated_at)
+grant select (username, total_xp, level, session_count, created_at, updated_at, active_title, title_expires_at)
   on profiles to authenticated;
 grant insert (username, owner_token, total_xp, level, session_count)
   on profiles to authenticated;
-grant update (total_xp, level, session_count, updated_at)
+grant update (total_xp, level, session_count, updated_at, active_title, title_expires_at)
   on profiles to authenticated;
 grant delete on profiles to authenticated;
 

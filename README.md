@@ -130,6 +130,22 @@ Eight trophies. Earned permanently once unlocked.
 - 💰 **XP Millionaire** — reach 10,000 total XP
 - 👑 **Legendary** — reach level 15
 
+## Loot titles
+
+Every session has a **2% chance** to drop a random title from the loot pool (`Coffee-Fueled`, `Regex Wizard`, `Merge Monster`, …). Titles last **24 hours** and decorate your row on the leaderboard:
+
+```
+#1    dan ← (Regex Wizard)    7 Pull Request Pro   14,321   47
+```
+
+Check what you're currently wearing — or confirm the dry spell — with:
+
+```bash
+claudexp title
+```
+
+Titles re-roll each session, so a lucky drop overwrites the previous one. If you've already got a title, a non-drop session just keeps it until it expires.
+
 ## Commands
 
 | Command                                         | What it does                                                     |
@@ -139,6 +155,7 @@ Eight trophies. Earned permanently once unlocked.
 | `claudexp board --local`                        | Force local-only                                                 |
 | `claudexp history [--limit N]`                  | Recent sessions with XP and tags                                 |
 | `claudexp achievements`                         | Unlocked + locked trophies                                       |
+| `claudexp title`                                | Show your active loot title and remaining time                   |
 | `claudexp setup`                                | First-time install / rename / chain into cloud claim             |
 | `claudexp hook install / uninstall / status`    | Manage the Stop hook in `~/.claude/settings.json`                |
 | `claudexp cloud claim`                          | Claim a username on the community board                          |
@@ -180,7 +197,7 @@ Want a private ClaudeXP for your team, company, or Discord?
 
 1. **Fork this repo.**
 2. **Create a Supabase project** (free tier handles hundreds of players).
-3. **Run the schema.** Supabase → SQL Editor → paste `cloud_schema.sql` → Run.
+3. **Run the schema.** Supabase → SQL Editor → paste `cloud_schema.sql` → Run. If you're already running a prior version, apply migrations in order from `migrations/` (each is idempotent).
 4. **Bake in your credentials.** Clone your fork, then `claudexp set-community` — paste your project URL and anon public key. That writes `community.json`.
 5. **Commit & push.** Anyone who installs from your fork auto-joins your board.
 

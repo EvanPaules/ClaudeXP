@@ -2,12 +2,14 @@
 import { parseTranscript, scoreSession, descriptorFor } from './engine.js';
 import {
   getDB, getDefaultUser, getOrCreateUser, saveSession, getTotalXP, hasSessionOnDate, countSessions,
+  getActiveTitle, saveActiveTitle, clearActiveTitle,
 } from './db.js';
 import { levelFor, nextLevelOf, progressToNext } from './levels.js';
 import { checkAchievements } from './achievements.js';
 import { renderOverlay } from './overlay.js';
 import { updateProfile, hasCloudConfig } from './sync.js';
 import { loadConfig } from './config.js';
+import { rollTitle, isActiveTitle } from './titles.js';
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -45,6 +47,22 @@ async function main() {
 
   const newAchievements = checkAchievements(db, user.id, signals, newXP, newLevel);
 
+  let loot = null;
+  const existing = getActiveTitle(db, user.id);
+  if (existing && !isActiveTitle(existing.title, existing.expiresAt)) {
+    clearActiveTitle(db, user.id);
+  }
+  const drop = rollTitle();
+  if (drop) {
+    saveActiveTitle(db, user.id, drop.title, drop.expiresAt);
+    loot = { title: drop.title, expiresAt: drop.expiresAt, isNew: true };
+  } else {
+    const current = getActiveTitle(db, user.id);
+    if (current && isActiveTitle(current.title, current.expiresAt)) {
+      loot = { title: current.title, expiresAt: current.expiresAt, isNew: false };
+    }
+  }
+
   const overlay = renderOverlay({
     xpGained,
     breakdown,
@@ -55,6 +73,7 @@ async function main() {
     nextLevelInfo: nextLevelOf(newLevel),
     newAchievements,
     levelUp: newLevel.level > prevLevel.level,
+    loot,
   });
 
   process.stderr.write('\n' + overlay + '\n\n');
@@ -70,6 +89,8 @@ async function main() {
         totalXP: newXP,
         level: newLevel.level,
         sessionCount: countSessions(db, user.id),
+        activeTitle: loot ? loot.title : null,
+        titleExpiresAt: loot ? loot.expiresAt : null,
       });
       if (!res.ok) process.stderr.write(`[claudexp] cloud sync failed: ${res.reason}\n`);
     }

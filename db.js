@@ -12,7 +12,9 @@ function initTables(db) {
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY,
       username TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      active_title TEXT,
+      title_expires_at TEXT
     );
     CREATE TABLE IF NOT EXISTS sessions (
       id INTEGER PRIMARY KEY,
@@ -34,6 +36,15 @@ function initTables(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_user_created ON sessions (user_id, created_at);
   `);
+
+  // Additive migration for DBs created before loot titles shipped.
+  const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+  if (!userCols.includes('active_title')) {
+    db.prepare('ALTER TABLE users ADD COLUMN active_title TEXT').run();
+  }
+  if (!userCols.includes('title_expires_at')) {
+    db.prepare('ALTER TABLE users ADD COLUMN title_expires_at TEXT').run();
+  }
 }
 
 export function getDB() {
@@ -144,9 +155,29 @@ export function getConsecutiveDays(db, userId) {
   return count;
 }
 
+export function saveActiveTitle(db, userId, title, expiresAt) {
+  db.prepare(
+    'UPDATE users SET active_title = ?, title_expires_at = ? WHERE id = ?'
+  ).run(title, expiresAt, userId);
+}
+
+export function getActiveTitle(db, userId) {
+  const row = db.prepare(
+    'SELECT active_title, title_expires_at FROM users WHERE id = ?'
+  ).get(userId);
+  if (!row) return null;
+  return { title: row.active_title, expiresAt: row.title_expires_at };
+}
+
+export function clearActiveTitle(db, userId) {
+  db.prepare(
+    'UPDATE users SET active_title = NULL, title_expires_at = NULL WHERE id = ?'
+  ).run(userId);
+}
+
 export function getAllUsersStats(db) {
   return db.prepare(`
-    SELECT u.id, u.username,
+    SELECT u.id, u.username, u.active_title, u.title_expires_at,
            COALESCE(MAX(s.total_xp_after), 0) AS total_xp,
            COALESCE(MAX(s.level_after), 1) AS level,
            COUNT(s.id) AS sessions
