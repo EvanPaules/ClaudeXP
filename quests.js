@@ -1,5 +1,7 @@
 export const QUEST_BONUS_XP = 150;
 
+export const QUEST_BREAKDOWN_MARKER = 'Daily quest:';
+
 export function hashDate(date = new Date()) {
   const key = date.toISOString().slice(0, 10);
   let h = 2166136261;

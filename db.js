@@ -2,12 +2,13 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { QUEST_BREAKDOWN_MARKER } from './quests.js';
 
 const DB_DIR = path.join(os.homedir(), '.claudexp');
 const DB_PATH = path.join(DB_DIR, 'data.db');
 let _db = null;
 
-function initTables(db) {
+export function initTables(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY,
@@ -85,6 +86,13 @@ export function hasSessionOnDate(db, userId, dateISO) {
     "SELECT COUNT(*) AS c FROM sessions WHERE user_id = ? AND date(created_at) = ?"
   ).get(userId, dateISO);
   return row.c > 0;
+}
+
+export function hasQuestCompletionOnDate(db, userId, dateISO) {
+  const row = db.prepare(
+    "SELECT 1 FROM sessions WHERE user_id = ? AND date(created_at) = ? AND breakdown_json LIKE ? LIMIT 1"
+  ).get(userId, dateISO, `%${QUEST_BREAKDOWN_MARKER}%`);
+  return row !== undefined;
 }
 
 export function countSessions(db, userId) {
