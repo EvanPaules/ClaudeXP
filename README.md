@@ -142,7 +142,9 @@ Run `claudexp quest` to see today's challenge and plan around it. Examples:
 - Touch 5+ files in a single session
 - Work past local midnight
 
-Resets at 00:00 UTC. No cross-session state — each day, each session stands alone.
+The bonus caps at **one award per UTC day per user** — extra quest-completing sessions the same day still earn their normal session XP, they just don't stack the +150.
+
+Resets at 00:00 UTC.
 
 ## Commands
 
