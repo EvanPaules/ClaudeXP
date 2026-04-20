@@ -135,3 +135,32 @@ test('applyQuestBonus: another user claiming today does not block this user', ()
   assert.equal(result.xp, 50 + QUEST_BONUS_XP);
 });
 
+// Round-trip contract: the breakdown entry produced by applyQuestBonus must be
+// detectable by hasQuestCompletionOnDate when persisted verbatim. This is the
+// lowest-cost guard against "someone renames the marker in one file only" —
+// if the write and match sites drift apart, this test flips red first.
+test('marker contract: applyQuestBonus output round-trips through hasQuestCompletionOnDate', async () => {
+  const { hasQuestCompletionOnDate } = await import('../db.js');
+  const db = makeDB();
+
+  const first = applyQuestBonus({
+    db, userId: 1, signals: completedSignals(),
+    baseXP: 50, breakdown: [{ xp: 50, reason: 'Base' }], today: TODAY,
+  });
+  // Must have produced a bonus entry with the marker (precondition).
+  assert.ok(
+    first.breakdown.some((b) => b.reason.includes(QUEST_BREAKDOWN_MARKER)),
+    'applyQuestBonus must emit an entry containing QUEST_BREAKDOWN_MARKER',
+  );
+
+  // Persist verbatim, same UTC day.
+  saveSessionAt(db, 1, first.xp, first.breakdown, '2026-04-19 10:00:00');
+
+  // hasQuestCompletionOnDate must now see it.
+  assert.equal(
+    hasQuestCompletionOnDate(db, 1, '2026-04-19'),
+    true,
+    'write site (applyQuestBonus) and match site (hasQuestCompletionOnDate) must agree on the marker',
+  );
+});
+
