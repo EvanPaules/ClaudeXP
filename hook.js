@@ -5,7 +5,7 @@ import {
 } from './db.js';
 import { levelFor, nextLevelOf, progressToNext } from './levels.js';
 import { checkAchievements } from './achievements.js';
-import { checkQuest } from './quests.js';
+import { applyQuestBonus } from './questBonus.js';
 import { renderOverlay } from './overlay.js';
 import { updateProfile, hasCloudConfig } from './sync.js';
 import { loadConfig } from './config.js';
@@ -35,17 +35,14 @@ async function main() {
   const yDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const streakActive = hasSessionOnDate(db, user.id, yDate);
 
-  const { xp: baseXP, breakdown } = scoreSession(signals, streakActive);
-  let xpGained = baseXP;
-
-  const questResult = checkQuest(signals);
-  if (questResult.completed) {
-    xpGained += questResult.bonus;
-    breakdown.push({
-      xp: questResult.bonus,
-      reason: `Daily quest: "${questResult.quest.label}" ✓`,
-    });
-  }
+  const base = scoreSession(signals, streakActive);
+  const { xp: xpGained, breakdown } = applyQuestBonus({
+    db,
+    userId: user.id,
+    signals,
+    baseXP: base.xp,
+    breakdown: base.breakdown,
+  });
 
   const prevXP = getTotalXP(db, user.id);
   const newXP = prevXP + xpGained;
