@@ -130,6 +130,22 @@ Eight trophies. Earned permanently once unlocked.
 - 💰 **XP Millionaire** — reach 10,000 total XP
 - 👑 **Legendary** — reach level 15
 
+## Daily Quests
+
+One quest per day, seeded from the UTC date — so everyone running ClaudeXP worldwide gets the same challenge. Complete it inside a single session and your overlay gets **+150 XP** tagged `Daily quest: "<label>" ✓`.
+
+Run `claudexp quest` to see today's challenge and plan around it. Examples:
+
+- Use 3+ different tool types
+- Edit a test file
+- Run a shell command
+- Touch 5+ files in a single session
+- Work past local midnight
+
+The bonus caps at **one award per UTC day per user** — extra quest-completing sessions the same day still earn their normal session XP, they just don't stack the +150.
+
+Resets at 00:00 UTC.
+
 ## Commands
 
 | Command                                         | What it does                                                     |
@@ -139,6 +155,7 @@ Eight trophies. Earned permanently once unlocked.
 | `claudexp board --local`                        | Force local-only                                                 |
 | `claudexp history [--limit N]`                  | Recent sessions with XP and tags                                 |
 | `claudexp achievements`                         | Unlocked + locked trophies                                       |
+| `claudexp quest`                                | Show today's daily quest (+150 XP if completed in a session)     |
 | `claudexp setup`                                | First-time install / rename / chain into cloud claim             |
 | `claudexp hook install / uninstall / status`    | Manage the Stop hook in `~/.claude/settings.json`                |
 | `claudexp cloud claim`                          | Claim a username on the community board                          |

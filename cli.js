@@ -13,6 +13,7 @@ import {
 } from './db.js';
 import { levelFor, nextLevelOf, progressToNext } from './levels.js';
 import { ACHIEVEMENTS } from './achievements.js';
+import { getTodayQuest, QUEST_BONUS_XP } from './quests.js';
 import { renderStatsCard, visualWidth } from './overlay.js';
 import {
   checkUsernameAvailable, claimUsername, updateProfile, deleteProfile,
@@ -198,6 +199,21 @@ program
         console.log(`  ${chalk.gray('·')} ${chalk.gray(a.title)} ${chalk.gray('— ' + a.desc)}`);
       }
     }
+    console.log('');
+  });
+
+program
+  .command('quest')
+  .description("Show today's daily quest")
+  .action(() => {
+    const q = getTodayQuest();
+    const today = new Date().toISOString().slice(0, 10);
+    console.log('');
+    console.log(chalk.bold(`🎯 Daily Quest `) + chalk.dim(`(${today} UTC)`));
+    console.log(chalk.dim('─'.repeat(60)));
+    console.log(`  ${chalk.cyan(q.label)}`);
+    console.log(chalk.dim(`  Reward: +${QUEST_BONUS_XP} XP if you finish it in a session today.`));
+    console.log(chalk.dim('  Same quest for everyone worldwide. Resets at 00:00 UTC.'));
     console.log('');
   });
 
