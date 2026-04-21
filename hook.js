@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { parseTranscript, scoreSession, descriptorFor } from './engine.js';
 import {
-  getDB, getDefaultUser, getOrCreateUser, saveSession, getTotalXP, hasSessionOnDate, countSessions,
+  getDB, getDefaultUser, getOrCreateUser, saveSession, updateSession,
+  getSessionByTranscript, sumXpExcept, getTotalXP, hasSessionOnDate, countSessions,
 } from './db.js';
 import { levelFor, nextLevelOf, progressToNext } from './levels.js';
 import { checkAchievements } from './achievements.js';
@@ -29,19 +30,33 @@ async function main() {
   let user = getDefaultUser(db);
   if (!user) user = getOrCreateUser(db, 'player');
 
-  const signals = parseTranscript(payload.transcript_path);
+  const transcriptPath = payload.transcript_path || null;
+  const signals = parseTranscript(transcriptPath);
 
   const yDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const streakActive = hasSessionOnDate(db, user.id, yDate);
 
-  const { xp: xpGained, breakdown } = scoreSession(signals, streakActive);
+  const { xp: sessionScore, breakdown } = scoreSession(signals, streakActive);
 
-  const prevXP = getTotalXP(db, user.id);
-  const newXP = prevXP + xpGained;
+  const existing = getSessionByTranscript(db, user.id, transcriptPath);
+  let xpGained, newXP;
+  if (existing) {
+    xpGained = Math.max(0, sessionScore - existing.xp_gained);
+    newXP = sumXpExcept(db, user.id, existing.id) + sessionScore;
+  } else {
+    xpGained = sessionScore;
+    newXP = getTotalXP(db, user.id) + sessionScore;
+  }
+
+  const prevXP = newXP - xpGained;
   const prevLevel = levelFor(prevXP);
   const newLevel = levelFor(newXP);
 
-  saveSession(db, user.id, xpGained, breakdown, newXP, newLevel.level);
+  if (existing) {
+    updateSession(db, existing.id, sessionScore, breakdown, newXP, newLevel.level);
+  } else {
+    saveSession(db, user.id, sessionScore, breakdown, newXP, newLevel.level, transcriptPath);
+  }
 
   const newAchievements = checkAchievements(db, user.id, signals, newXP, newLevel);
 
