@@ -2,12 +2,13 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { QUEST_BREAKDOWN_MARKER } from './quests.js';
 
 const DB_DIR = path.join(os.homedir(), '.claudexp');
 const DB_PATH = path.join(DB_DIR, 'data.db');
 let _db = null;
 
-function initTables(db) {
+export function initTables(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY,
@@ -37,7 +38,12 @@ function initTables(db) {
     CREATE INDEX IF NOT EXISTS idx_sessions_user_created ON sessions (user_id, created_at);
   `);
 
-  // Additive migration for DBs created before loot titles shipped.
+  const sessionCols = db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name);
+  if (!sessionCols.includes('transcript_path')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN transcript_path TEXT').run();
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_user_transcript ON sessions (user_id, transcript_path)');
+
   const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
   if (!userCols.includes('active_title')) {
     db.prepare('ALTER TABLE users ADD COLUMN active_title TEXT').run();
@@ -78,17 +84,38 @@ export function renameUser(db, userId, newName) {
   db.prepare('UPDATE users SET username = ? WHERE id = ?').run(newName, userId);
 }
 
-export function saveSession(db, userId, xpGained, breakdown, totalXP, level) {
+export function saveSession(db, userId, xpGained, breakdown, totalXP, level, transcriptPath = null) {
+  const info = db.prepare(
+    'INSERT INTO sessions (user_id, xp_gained, breakdown_json, total_xp_after, level_after, transcript_path) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(userId, xpGained, JSON.stringify(breakdown), totalXP, level, transcriptPath);
+  return info.lastInsertRowid;
+}
+
+export function updateSession(db, sessionId, xpGained, breakdown, totalXP, level) {
   db.prepare(
-    'INSERT INTO sessions (user_id, xp_gained, breakdown_json, total_xp_after, level_after) VALUES (?, ?, ?, ?, ?)'
-  ).run(userId, xpGained, JSON.stringify(breakdown), totalXP, level);
+    'UPDATE sessions SET xp_gained = ?, breakdown_json = ?, total_xp_after = ?, level_after = ? WHERE id = ?'
+  ).run(xpGained, JSON.stringify(breakdown), totalXP, level, sessionId);
+}
+
+export function getSessionByTranscript(db, userId, transcriptPath) {
+  if (!transcriptPath) return null;
+  return db.prepare(
+    'SELECT * FROM sessions WHERE user_id = ? AND transcript_path = ?'
+  ).get(userId, transcriptPath);
+}
+
+export function sumXpExcept(db, userId, excludeSessionId) {
+  const row = db.prepare(
+    'SELECT COALESCE(SUM(xp_gained), 0) AS total FROM sessions WHERE user_id = ? AND id != ?'
+  ).get(userId, excludeSessionId);
+  return row ? row.total : 0;
 }
 
 export function getTotalXP(db, userId) {
   const row = db.prepare(
-    'SELECT total_xp_after FROM sessions WHERE user_id = ? ORDER BY id DESC LIMIT 1'
+    'SELECT COALESCE(SUM(xp_gained), 0) AS total FROM sessions WHERE user_id = ?'
   ).get(userId);
-  return row ? row.total_xp_after : 0;
+  return row ? row.total : 0;
 }
 
 export function hasSessionOnDate(db, userId, dateISO) {
@@ -96,6 +123,13 @@ export function hasSessionOnDate(db, userId, dateISO) {
     "SELECT COUNT(*) AS c FROM sessions WHERE user_id = ? AND date(created_at) = ?"
   ).get(userId, dateISO);
   return row.c > 0;
+}
+
+export function hasQuestCompletionOnDate(db, userId, dateISO) {
+  const row = db.prepare(
+    "SELECT 1 FROM sessions WHERE user_id = ? AND date(created_at) = ? AND breakdown_json LIKE ? LIMIT 1"
+  ).get(userId, dateISO, `%${QUEST_BREAKDOWN_MARKER}%`);
+  return row !== undefined;
 }
 
 export function countSessions(db, userId) {
