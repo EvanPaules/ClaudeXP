@@ -117,6 +117,37 @@ create trigger profiles_xp_delta_cap
   execute function enforce_xp_delta();
 
 -- =========================================================================
+-- Anti-clobber: total_xp / session_count are monotonic.
+-- =========================================================================
+-- A PATCH that lowers total_xp or session_count is rejected. Backstop for
+-- the multi-machine / reinstall case where a stale local DB tries to
+-- overwrite the cloud truth. service_role bypasses this for admin resets.
+
+create or replace function profiles_total_xp_monotonic()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.total_xp < old.total_xp then
+    raise exception 'total_xp cannot decrease (was %, attempted %)',
+      old.total_xp, new.total_xp
+      using errcode = 'check_violation';
+  end if;
+  if new.session_count < old.session_count then
+    raise exception 'session_count cannot decrease (was %, attempted %)',
+      old.session_count, new.session_count
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger profiles_total_xp_monotonic
+  before update on profiles
+  for each row
+  execute function profiles_total_xp_monotonic();
+
+-- =========================================================================
 -- Anti-abuse: per-IP insert rate limit.
 -- =========================================================================
 -- Tracks username claims per IP in a private table that anon cannot touch.

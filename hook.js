@@ -3,13 +3,13 @@ import { parseTranscript, scoreSession, descriptorFor } from './engine.js';
 import {
   getDB, getDefaultUser, getOrCreateUser, saveSession, updateSession,
   getSessionByTranscript, sumXpExcept, getTotalXP, hasSessionOnDate, countSessions,
-  getActiveTitle, saveActiveTitle, clearActiveTitle,
+  getActiveTitle, saveActiveTitle, clearActiveTitle, reconcileFromCloud,
 } from './db.js';
 import { levelFor, nextLevelOf, progressToNext } from './levels.js';
 import { checkAchievements } from './achievements.js';
 import { applyQuestBonus } from './questBonus.js';
 import { renderOverlay } from './overlay.js';
-import { updateProfile, hasCloudConfig } from './sync.js';
+import { updateProfile, fetchProfile, hasCloudConfig } from './sync.js';
 import { loadConfig } from './config.js';
 import { rollTitle, isActiveTitle } from './titles.js';
 
@@ -32,6 +32,23 @@ async function main() {
   const db = getDB();
   let user = getDefaultUser(db);
   if (!user) user = getOrCreateUser(db, 'player');
+
+  // Pull cloud baseline before scoring so a second machine / reinstall
+  // catches up to the cloud total instead of clobbering it on PATCH.
+  if (hasCloudConfig()) {
+    const cfg = loadConfig();
+    if (cfg.claimed_username && cfg.owner_token) {
+      try {
+        const r = await fetchProfile(cfg.claimed_username);
+        if (r.ok && r.row) {
+          reconcileFromCloud(db, user.id, {
+            totalXP: r.row.total_xp || 0,
+            sessionCount: r.row.session_count || 0,
+          });
+        }
+      } catch { /* network hiccup — skip silently, regular sync below will retry */ }
+    }
+  }
 
   const transcriptPath = payload.transcript_path || null;
   const signals = parseTranscript(transcriptPath);

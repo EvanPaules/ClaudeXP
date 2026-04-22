@@ -139,6 +139,21 @@ export async function deleteProfile({ username, ownerToken }, { timeoutMs = 1000
   }
 }
 
+export async function fetchProfile(username, { timeoutMs = 5000 } = {}) {
+  const cfg = resolveCloudConfig();
+  if (!cfg.url || !cfg.key) return disabled();
+
+  const url = `${cfg.url}/rest/v1/profiles?select=username,total_xp,level,session_count,active_title,title_expires_at,updated_at&username=eq.${encodeURIComponent(username)}&limit=1`;
+  try {
+    const res = await withTimeout((signal) => fetch(url, { headers: authHeaders(cfg), signal }), timeoutMs);
+    if (!res.ok) return { ok: false, reason: await errFromRes(res) };
+    const rows = await res.json();
+    return { ok: true, row: rows[0] || null };
+  } catch (err) {
+    return { ok: false, reason: abortReason(err) };
+  }
+}
+
 export async function fetchLeaderboard(limit = 50, { timeoutMs = 5000 } = {}) {
   const cfg = resolveCloudConfig();
   if (!cfg.url || !cfg.key) return { ok: false, reason: 'cloud not configured', rows: [] };

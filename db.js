@@ -51,6 +51,15 @@ export function initTables(db) {
   if (!userCols.includes('title_expires_at')) {
     db.prepare('ALTER TABLE users ADD COLUMN title_expires_at TEXT').run();
   }
+  // Cloud baseline — XP/sessions that already exist on the cloud row but
+  // not in this machine's session log. Lets reinstalls and second machines
+  // catch up without clobbering the cloud total.
+  if (!userCols.includes('cloud_baseline_xp')) {
+    db.prepare('ALTER TABLE users ADD COLUMN cloud_baseline_xp INTEGER NOT NULL DEFAULT 0').run();
+  }
+  if (!userCols.includes('cloud_baseline_sessions')) {
+    db.prepare('ALTER TABLE users ADD COLUMN cloud_baseline_sessions INTEGER NOT NULL DEFAULT 0').run();
+  }
 }
 
 export function getDB() {
@@ -104,18 +113,62 @@ export function getSessionByTranscript(db, userId, transcriptPath) {
   ).get(userId, transcriptPath);
 }
 
+function getBaselineXP(db, userId) {
+  const r = db.prepare('SELECT cloud_baseline_xp AS x FROM users WHERE id = ?').get(userId);
+  return r ? (r.x || 0) : 0;
+}
+
+function getBaselineSessions(db, userId) {
+  const r = db.prepare('SELECT cloud_baseline_sessions AS x FROM users WHERE id = ?').get(userId);
+  return r ? (r.x || 0) : 0;
+}
+
 export function sumXpExcept(db, userId, excludeSessionId) {
   const row = db.prepare(
     'SELECT COALESCE(SUM(xp_gained), 0) AS total FROM sessions WHERE user_id = ? AND id != ?'
   ).get(userId, excludeSessionId);
-  return row ? row.total : 0;
+  return (row ? row.total : 0) + getBaselineXP(db, userId);
 }
 
 export function getTotalXP(db, userId) {
   const row = db.prepare(
     'SELECT COALESCE(SUM(xp_gained), 0) AS total FROM sessions WHERE user_id = ?'
   ).get(userId);
-  return row ? row.total : 0;
+  return (row ? row.total : 0) + getBaselineXP(db, userId);
+}
+
+export function getCloudBaseline(db, userId) {
+  const r = db.prepare(
+    'SELECT cloud_baseline_xp AS xp, cloud_baseline_sessions AS sessions FROM users WHERE id = ?'
+  ).get(userId);
+  return r ? { xp: r.xp || 0, sessions: r.sessions || 0 } : { xp: 0, sessions: 0 };
+}
+
+// Reconcile local state with what the cloud says it has. Returns true if any
+// baseline was raised. Never lowers a baseline — cloud is authoritative for
+// "at-least" floors, never for ceilings.
+export function reconcileFromCloud(db, userId, { totalXP = 0, sessionCount = 0 } = {}) {
+  const localSessionXP = db.prepare(
+    'SELECT COALESCE(SUM(xp_gained), 0) AS x FROM sessions WHERE user_id = ?'
+  ).get(userId).x;
+  const localSessionCount = db.prepare(
+    'SELECT COUNT(*) AS c FROM sessions WHERE user_id = ?'
+  ).get(userId).c;
+
+  // Baseline needs to fill the gap between what's stored locally and what
+  // the cloud already credits us with.
+  const neededBaselineXP = Math.max(0, (totalXP || 0) - localSessionXP);
+  const neededBaselineSessions = Math.max(0, (sessionCount || 0) - localSessionCount);
+
+  const cur = getCloudBaseline(db, userId);
+  const newXP = Math.max(cur.xp, neededBaselineXP);
+  const newSessions = Math.max(cur.sessions, neededBaselineSessions);
+
+  if (newXP === cur.xp && newSessions === cur.sessions) return false;
+  db.prepare(
+    'UPDATE users SET cloud_baseline_xp = ?, cloud_baseline_sessions = ? WHERE id = ?'
+  ).run(newXP, newSessions, userId);
+  return true;
 }
 
 export function hasSessionOnDate(db, userId, dateISO) {
@@ -133,7 +186,8 @@ export function hasQuestCompletionOnDate(db, userId, dateISO) {
 }
 
 export function countSessions(db, userId) {
-  return db.prepare('SELECT COUNT(*) AS c FROM sessions WHERE user_id = ?').get(userId).c;
+  return db.prepare('SELECT COUNT(*) AS c FROM sessions WHERE user_id = ?').get(userId).c
+    + getBaselineSessions(db, userId);
 }
 
 export function countSessionsWithBreakdown(db, userId, like) {
@@ -212,9 +266,9 @@ export function clearActiveTitle(db, userId) {
 export function getAllUsersStats(db) {
   return db.prepare(`
     SELECT u.id, u.username, u.active_title, u.title_expires_at,
-           COALESCE(MAX(s.total_xp_after), 0) AS total_xp,
+           COALESCE(SUM(s.xp_gained), 0) + COALESCE(u.cloud_baseline_xp, 0) AS total_xp,
            COALESCE(MAX(s.level_after), 1) AS level,
-           COUNT(s.id) AS sessions
+           COUNT(s.id) + COALESCE(u.cloud_baseline_sessions, 0) AS sessions
       FROM users u
       LEFT JOIN sessions s ON s.user_id = u.id
      GROUP BY u.id

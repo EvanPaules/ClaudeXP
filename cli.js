@@ -11,7 +11,7 @@ import {
   getDB, getDefaultUser, getOrCreateUser, renameUser,
   getRecentSessions, getUnlockedAchievements, countSessions,
   getTotalXP, getConsecutiveDays, getAllUsersStats, DB_PATH_LOCATION,
-  getActiveTitle, clearActiveTitle,
+  getActiveTitle, clearActiveTitle, reconcileFromCloud,
 } from './db.js';
 import { levelFor, nextLevelOf, progressToNext } from './levels.js';
 import { ACHIEVEMENTS } from './achievements.js';
@@ -20,7 +20,7 @@ import { renderStatsCard, visualWidth } from './overlay.js';
 import { isActiveTitle, truncateTitle, formatExpiry, DROP_RATE } from './titles.js';
 import {
   checkUsernameAvailable, claimUsername, updateProfile, deleteProfile,
-  fetchLeaderboard, testConnection, hasCloudConfig,
+  fetchLeaderboard, fetchProfile, testConnection, hasCloudConfig,
 } from './sync.js';
 import {
   loadConfig, updateConfig, clearCloudConfig, saveClaim, clearClaim,
@@ -374,7 +374,15 @@ program
         console.log(chalk.dim('   If you maintain this repo: fill in ') + chalk.cyan(COMMUNITY_PATH_LOCATION));
         console.log(chalk.dim('   To use your own Supabase: ') + chalk.cyan('claudexp cloud configure'));
       } else if (localCfg.claimed_username === name && localCfg.owner_token) {
-        console.log(chalk.dim('\n☁️  Already claimed on cloud as ') + chalk.cyan(name) + chalk.dim(' — pushing current stats...'));
+        console.log(chalk.dim('\n☁️  Already claimed on cloud as ') + chalk.cyan(name) + chalk.dim(' — reconciling...'));
+        const fp = await fetchProfile(name, { timeoutMs: 10000 });
+        if (fp.ok && fp.row) {
+          const raised = reconcileFromCloud(db, user.id, {
+            totalXP: fp.row.total_xp || 0,
+            sessionCount: fp.row.session_count || 0,
+          });
+          if (raised) console.log(chalk.dim(`  · pulled cloud baseline (${(fp.row.total_xp || 0).toLocaleString()} XP, ${fp.row.session_count || 0} sessions)`));
+        }
         const totalXP = getTotalXP(db, user.id);
         const sessionCount = countSessions(db, user.id);
         const levelInfo = levelFor(totalXP);
@@ -489,10 +497,21 @@ cloud
   .command('claim')
   .description('Claim your username on the community leaderboard')
   .action(async () => {
-    const { user } = await ensureUser();
+    const { db, user } = await ensureUser();
     const c = loadConfig();
     if (c.claimed_username && c.owner_token) {
       console.log(chalk.dim(`\nAlready claimed as ${chalk.cyan(c.claimed_username)}.`));
+      process.stdout.write(chalk.dim('  Reconciling cloud baseline... '));
+      const fp = await fetchProfile(c.claimed_username, { timeoutMs: 10000 });
+      if (fp.ok && fp.row) {
+        const raised = reconcileFromCloud(db, user.id, {
+          totalXP: fp.row.total_xp || 0,
+          sessionCount: fp.row.session_count || 0,
+        });
+        console.log(chalk.green(raised ? `✓ pulled ${(fp.row.total_xp || 0).toLocaleString()} XP from cloud` : '✓ already in sync'));
+      } else {
+        console.log(chalk.yellow('⚠ ' + (fp.reason || 'no row')));
+      }
       console.log(chalk.dim('To release and reclaim, run: ') + chalk.cyan('claudexp cloud delete') + chalk.dim(' then ') + chalk.cyan('claudexp cloud claim') + '\n');
       return;
     }
@@ -511,6 +530,13 @@ cloud
     if (!hasCloudConfig()) { console.log(chalk.dim('\nCloud not configured.\n')); return; }
     if (!c.claimed_username || !c.owner_token) {
       console.log(chalk.yellow('\nNo claim yet. Run: ') + chalk.cyan('claudexp cloud claim') + '\n'); return;
+    }
+    const fp = await fetchProfile(c.claimed_username, { timeoutMs: 10000 });
+    if (fp.ok && fp.row) {
+      reconcileFromCloud(db, user.id, {
+        totalXP: fp.row.total_xp || 0,
+        sessionCount: fp.row.session_count || 0,
+      });
     }
     const totalXP = getTotalXP(db, user.id);
     const sessionCount = countSessions(db, user.id);
