@@ -10,11 +10,13 @@ import {
   getDB, getDefaultUser, getOrCreateUser, renameUser,
   getRecentSessions, getUnlockedAchievements, countSessions,
   getTotalXP, getConsecutiveDays, getAllUsersStats, DB_PATH_LOCATION,
+  getActiveTitle, clearActiveTitle,
 } from './db.js';
 import { levelFor, nextLevelOf, progressToNext } from './levels.js';
 import { ACHIEVEMENTS } from './achievements.js';
 import { getTodayQuest, QUEST_BONUS_XP } from './quests.js';
 import { renderStatsCard, visualWidth } from './overlay.js';
+import { isActiveTitle, truncateTitle, formatExpiry, DROP_RATE } from './titles.js';
 import {
   checkUsernameAvailable, claimUsername, updateProfile, deleteProfile,
   fetchLeaderboard, testConnection, hasCloudConfig,
@@ -238,6 +240,8 @@ program
           total_xp: r.total_xp,
           level: r.level,
           sessions: r.session_count,
+          active_title: r.active_title,
+          title_expires_at: r.title_expires_at,
         }));
         source = 'cloud';
       } else {
@@ -248,24 +252,29 @@ program
     if (!rows) {
       rows = getAllUsersStats(db).map(r => ({
         username: r.username, total_xp: r.total_xp, level: r.level, sessions: r.sessions,
+        active_title: r.active_title, title_expires_at: r.title_expires_at,
       }));
     }
 
     const header = source === 'cloud' ? '☁️  Community Leaderboard' : '🏁 Local Leaderboard';
     console.log('');
     console.log(chalk.bold(header));
-    console.log(chalk.dim('─'.repeat(70)));
-    console.log(chalk.bold(pad('Rank', 6) + pad('Player', 22) + pad('Level', 26) + pad('Total XP', 12) + 'Sessions'));
-    console.log(chalk.dim('─'.repeat(70)));
+    console.log(chalk.dim('─'.repeat(78)));
+    console.log(chalk.bold(pad('Rank', 6) + pad('Player', 30) + pad('Level', 26) + pad('Total XP', 12) + 'Sessions'));
+    console.log(chalk.dim('─'.repeat(78)));
 
     rows.forEach((r, i) => {
       const levelInfo = levelFor(r.total_xp || 0);
       const levelCell = `${levelInfo.level} ${chalk.dim(levelInfo.title)}`;
       const isMe = r.username === myName;
-      const nameCell = isMe ? chalk.bold.green(r.username + ' ←') : r.username;
+      const base = isMe ? chalk.bold.green(r.username + ' ←') : r.username;
+      const titleSuffix = isActiveTitle(r.active_title, r.title_expires_at)
+        ? chalk.magenta(' (' + truncateTitle(r.active_title) + ')')
+        : '';
+      const nameCell = base + titleSuffix;
       console.log(
         pad('#' + (i + 1), 6) +
-        pad(nameCell, 22) +
+        pad(nameCell, 30) +
         pad(levelCell, 26) +
         chalk.yellow(pad((r.total_xp || 0).toLocaleString(), 12)) +
         chalk.dim(String(r.sessions || 0))
@@ -369,6 +378,29 @@ program
     }
 
     console.log('\n' + chalk.green('All set. ') + chalk.dim('Try ') + chalk.cyan('claudexp stats') + chalk.dim(' or ') + chalk.cyan('claudexp board') + '\n');
+  });
+
+program
+  .command('title')
+  .description('Show your active loot title (if any)')
+  .action(async () => {
+    const { db, user } = await ensureUser();
+    const row = getActiveTitle(db, user.id);
+    console.log('');
+    console.log(chalk.bold('🎁 Loot Title'));
+    console.log(chalk.dim('─'.repeat(60)));
+    if (row && isActiveTitle(row.title, row.expiresAt)) {
+      console.log(`  ${chalk.magenta.bold('"' + row.title + '"')}`);
+      console.log(chalk.dim(`  Expires in ${formatExpiry(row.expiresAt)}.`));
+    } else {
+      if (row && row.title) {
+        clearActiveTitle(db, user.id);
+      }
+      console.log(chalk.dim('  No active title.'));
+      const pct = (DROP_RATE * 100).toFixed(1);
+      console.log(chalk.dim(`  Each session has a ${pct}% chance to drop one (24h duration).`));
+    }
+    console.log('');
   });
 
 // --- hook subcommands ---

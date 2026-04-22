@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import { formatExpiry } from './titles.js';
 
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
@@ -49,7 +50,7 @@ function frame(lines) {
 export function renderOverlay({
   xpGained, breakdown, descriptor,
   level, levelInfo, progressPercent, nextLevelInfo,
-  newAchievements = [], levelUp = false,
+  newAchievements = [], levelUp = false, loot = null,
 }) {
   const lines = [];
   const sep = () => lines.push({ sep: true });
@@ -76,6 +77,11 @@ export function renderOverlay({
 
   for (const ach of newAchievements) {
     row(`${chalk.cyan.bold('🏆 Achievement:')} ${chalk.cyan(ach.title)} ${chalk.dim('— ' + ach.desc)}`);
+  }
+
+  if (loot && loot.title) {
+    const label = loot.isNew ? '🎁 Loot drop:' : '🎁 Loot:';
+    row(`${chalk.magenta.bold(label)} ${chalk.magenta('"' + loot.title + '"')} ${chalk.dim('— expires in ' + formatExpiry(loot.expiresAt))}`);
   }
 
   row(`${chalk.magenta.bold('Level ' + level)} ${chalk.dim('·')} ${chalk.magenta(levelInfo.title)}`);
