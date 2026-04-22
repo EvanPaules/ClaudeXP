@@ -1,6 +1,6 @@
 {
   "name": "claudexp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Turn every Claude Code session into XP. Level up, unlock achievements, and climb the global leaderboard.",
   "type": "module",
   "main": "cli.js",
@@ -11,6 +11,7 @@
     "*.js",
     "community.json",
     "cloud_schema.sql",
+    "migrations/",
     "README.md",
     "LICENSE",
     "install.ps1",
@@ -20,7 +21,8 @@
     "hook": "node hook.js",
     "start": "node cli.js",
     "stats": "node cli.js stats",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "postinstall": "node postinstall.js"
   },
   "keywords": [
     "claude",

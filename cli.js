@@ -5,6 +5,7 @@ import readline from 'node:readline/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   getDB, getDefaultUser, getOrCreateUser, renameUser,
@@ -52,6 +53,15 @@ function validateUsername(name) {
   return null;
 }
 
+function deriveUsername() {
+  let raw = '';
+  try { raw = (os.userInfo().username || '').trim(); } catch { /* fall through */ }
+  raw = raw.replace(/[^a-zA-Z0-9_.-]/g, '');
+  if (raw.length < 2) raw = 'player';
+  if (raw.length > 24) raw = raw.slice(0, 24);
+  return raw;
+}
+
 async function ensureUser() {
   const db = getDB();
   let user = getDefaultUser(db);
@@ -62,16 +72,18 @@ async function ensureUser() {
   return { db, user };
 }
 
-async function claimCloudFlow(desiredUsername) {
+async function claimCloudFlow(desiredUsername, { interactive = process.stdin.isTTY === true } = {}) {
   const cloud = resolveCloudConfig();
   if (!cloud.url || !cloud.key) {
     return { ok: false, skipped: true, reason: 'cloud not configured' };
   }
 
   let username = desiredUsername;
+  let autoTries = 0;
   while (true) {
     const err = validateUsername(username);
     if (err) {
+      if (!interactive) return { ok: false, reason: `invalid username "${username}" (${err})` };
       username = await prompt(`  Invalid (${err}). Username: `);
       continue;
     }
@@ -84,6 +96,14 @@ async function claimCloudFlow(desiredUsername) {
     }
     if (!avail.available) {
       console.log(chalk.red('✗ taken'));
+      if (!interactive) {
+        if (autoTries++ >= 5) return { ok: false, reason: `name "${desiredUsername}" and 5 auto-suffixed variants all taken` };
+        const suffix = crypto.randomBytes(2).toString('hex');
+        const next = (username.replace(/-[0-9a-f]{4}$/, '') + '-' + suffix).slice(0, 24);
+        console.log(chalk.dim(`  retrying as "${next}"...`));
+        username = next;
+        continue;
+      }
       username = await prompt('  Try another name: ');
       continue;
     }
@@ -298,14 +318,22 @@ program
     const db = getDB();
     const existing = getDefaultUser(db);
     const cloud = resolveCloudConfig();
+    const interactive = process.stdin.isTTY === true;
 
     console.log(chalk.bold('\n🛠️  claudexp setup'));
     console.log(chalk.dim('─'.repeat(40)));
 
-    const q = existing
-      ? `Username (current: ${chalk.cyan(existing.username)}, enter to keep): `
-      : 'Pick a username: ';
-    let name = (await prompt(q)) || (existing ? existing.username : '');
+    let name;
+    if (interactive) {
+      const q = existing
+        ? `Username (current: ${chalk.cyan(existing.username)}, enter to keep): `
+        : 'Pick a username: ';
+      name = (await prompt(q)) || (existing ? existing.username : '');
+    } else {
+      name = existing ? existing.username : deriveUsername();
+      console.log(chalk.dim(`Non-interactive install — using username "${chalk.cyan(name)}".`));
+      console.log(chalk.dim(`(Run ${chalk.cyan('claudexp setup')} from a terminal to change it.)`));
+    }
 
     const vErr = validateUsername(name);
     if (vErr) { console.log(chalk.red(`\nInvalid username: ${vErr}\n`)); return; }
@@ -357,6 +385,11 @@ program
         console.log('  ' + (r.ok ? chalk.green('✓ synced') : chalk.yellow('⚠ ' + r.reason)));
       } else if (localCfg.claimed_username && localCfg.claimed_username !== name && localCfg.owner_token) {
         console.log(chalk.yellow(`\n☁️  You already own ${chalk.cyan(localCfg.claimed_username)} on the cloud.`));
+        if (!interactive) {
+          console.log(chalk.dim('   Non-interactive — keeping existing cloud claim. Run `claudexp setup` interactively to change it.'));
+          console.log('\n' + chalk.green('All set. ') + chalk.dim('Try ') + chalk.cyan('claudexp stats') + chalk.dim(' or ') + chalk.cyan('claudexp board') + '\n');
+          return;
+        }
         const ans = (await prompt(`   Delete it and reclaim as ${chalk.cyan(name)}? (y/N): `)).toLowerCase();
         if (ans === 'y' || ans === 'yes') {
           process.stdout.write(chalk.dim(`   deleting ${localCfg.claimed_username}... `));

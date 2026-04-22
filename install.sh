@@ -39,4 +39,12 @@ echo
 echo "✓  ClaudeXP installed. Running setup..."
 echo
 
-claudexp setup
+# When piped (curl ... | bash), our stdin is the bash pipe, not a TTY.
+# Re-attach the user's terminal so `claudexp setup` can prompt; if no TTY
+# is reachable, setup falls back to non-interactive mode and derives a
+# username from $USER.
+if [ -r /dev/tty ]; then
+  claudexp setup </dev/tty
+else
+  claudexp setup
+fi
